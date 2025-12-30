@@ -1,5 +1,8 @@
 #!/usr/bin/python3
 
+# The main purpose of this script is bulk-exporting resources (especially graphical resources)
+# from old Windows executables (both PE and NE).
+
 import argparse
 import subprocess
 import sys
@@ -23,33 +26,35 @@ def extract_pe_resources(filepath, output_dir):
 def extract_ne_resources(filepath, output_dir):
     """Extract resources from an NE file using nefile."""
     executable = nefile.NE(filepath)
-    print(f"Detected NE file: {filepath}")
+    print(f"NE: {filepath}")
     executable.export_resources(output_dir)
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract resources from PE or NE files')
-    parser.add_argument('input_file', help='Path to the PE or NE file')
-    parser.add_argument('output_dir', help='Directory to extract resources to')
+    parser = argparse.ArgumentParser(description='Extract resources from Windows executables (PE or NE)')
+    parser.add_argument('input_filepath', help='Path to the Windows executable')
+    parser.add_argument('output_directory_path', help='Path to directory where resources should be extracted')
     args = parser.parse_args()
 
-    filepath = args.input_file
-    output_dir = args.output_dir
+    input_filepath = args.input_filepath
+    output_directory_path = args.output_directory_path
 
     # DETECT THE FILE TYPE.
     # We will first assume this is a PE file, and if loading as a PE fails we will try reading as an NE file.
     try:
-        # Try to load as PE file. We are not currently using the
-        executable = pefile.PE(filepath)
-        print(f"Detected PE file: {filepath}")
-        extract_pe_resources(filepath, output_dir)
+        # Try to load as PE file. We are not currently using the pefile library to extract the resources; just
+        # to check the format. But in the longer term, we should have our own extraction and not use wrestool
+        # because of the well-known issues with it.
+        executable = pefile.PE(input_filepath)
+        print(f"PE: {input_filepath}")
+        extract_pe_resources(input_filepath, output_directory_path)
 
     except pefile.PEFormatError:
         # Not a PE file, try NE.
         try:
-            extract_ne_resources(filepath, output_dir)
+            extract_ne_resources(input_filepath, output_directory_path)
 
         except nefile.NEFormatError:
-            print(f"Skipping {filepath}: Not a valid PE or NE file", file = sys.stderr)
+            print(f"Skipping {input_filepath}: Not a valid PE or NE file", file = sys.stderr)
 
 if __name__ == '__main__':
     main()
