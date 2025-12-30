@@ -4,6 +4,8 @@ import argparse
 import subprocess
 import sys
 import pefile
+# For development purposes, we can install a local version of the library with this:
+#  pipenv install -e ../nefile
 import nefile
 
 def main():
