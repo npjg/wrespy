@@ -29,31 +29,51 @@ def calculate_file_hash(filepath):
 def extract_with_wrestool(filepath, output_dir):
     """Extract resources from a PE file using wrestool."""
     try:
-        # Calculate the hash of the start of the file
+        # CREATE THE UNIQUE DIRECTORY PATH FOR RESOURCES FROM THIS FILE.
+        # Calculate the hash of the start of the file.
         file_hash = calculate_file_hash(filepath)
         filename = os.path.basename(filepath)
         base_output_dir = os.path.join(output_dir, f"{filename} - {file_hash}")
         hash_output_dir = base_output_dir
-
-        # Ensure the directory name is unique by appending a number if necessary
+        # Ensure the directory name is unique by appending a number if necessary.
         counter = 1
         while os.path.exists(hash_output_dir):
             hash_output_dir = f"{base_output_dir}-{counter}"
             counter += 1
-
-        # Create the directory for the extracted resources
+        # Now, we can actually create the directory.
         os.makedirs(hash_output_dir, exist_ok=True)
 
+        # DEFINE TYPES THAT WE WANT TO REMOVE.
+        # These are not graphical types, and so I am not interested in them.
+        resource_type_ids_to_exclude = [
+            4, # RT_MENU
+            5, # RT_DIALOG
+            6, # RT_STRING
+            7, # RT_FONTDIR
+            8, # RT_FONT
+            9, # RT_ACCELERATOR
+            10, # RT_RCDATA
+            11, # RT_MESSAGETABLE
+            16, # RT_VERSION
+        ]
+        exclude_args = [f"--type=-{resource_type}" for resource_type in resource_type_ids_to_exclude]
+        # TODO: This doesn't seem to be working as expected. Maybe wrestool doesn't handle the arguments
+        # like I think it does?
+        exclude_args = []
+
+        # EXTRACT THE RESOURCES.
         # This gets all resources (including the ones that wrestool can't process). However,
         # bitmaps and icons and such don't have the proper icons written, so we need another pass.
-        subprocess.run(['wrestool', '--extract', '--raw', '--output', hash_output_dir, filepath],
-                     check=True)
-
+        subprocess.run([
+            'wrestool', '--extract', '--raw', *exclude_args, '--output', hash_output_dir, filepath],
+            check=True)
         # This now gets the resources wrestool CAN process - we will overwrite the old raw
         # files for the images that wrestool can process.
-        subprocess.run(['wrestool', '--extract', '--output', hash_output_dir, filepath],
-                     check=True)
+        subprocess.run([
+            'wrestool', '--extract', *exclude_args, '--output', hash_output_dir, filepath],
+            check=True)
 
+        # SEE IF ANY RESOURCES WERE WRITTEN.
         # Check if the directory is empty and remove it if it is
         if not os.listdir(hash_output_dir):
             shutil.rmtree(hash_output_dir)
