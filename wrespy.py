@@ -11,19 +11,52 @@ import pefile
 # For development purposes, we can install a local version of the library with this:
 #  pipenv install -e ../nefile
 import nefile
+import hashlib
+import shutil
 
+# Function to calculate the hash of the first 4096 bytes of a file.
+# This should be sufficient to uniquely distinguish most things where the names are the same.
+def calculate_file_hash(filepath):
+    """Calculate the SHA256 hash of the first 4096 bytes of a file."""
+    sha256 = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        chunk = f.read(4096)
+        sha256.update(chunk)
+    return sha256.hexdigest()
+
+# Updated extract_pe_resources function to handle hash collisions by appending a number to the directory name
 def extract_pe_resources(filepath, output_dir):
     """Extract resources from a PE file using wrestool."""
     try:
+        # Calculate the hash of the start of the file
+        file_hash = calculate_file_hash(filepath)
+        filename = os.path.basename(filepath)
+        base_output_dir = os.path.join(output_dir, f"{filename} - {file_hash}")
+        hash_output_dir = base_output_dir
+
+        # Ensure the directory name is unique by appending a number if necessary
+        counter = 1
+        while os.path.exists(hash_output_dir):
+            hash_output_dir = f"{base_output_dir}-{counter}"
+            counter += 1
+
+        # Create the directory for the extracted resources
+        os.makedirs(hash_output_dir, exist_ok=True)
+
         # This gets all resources (including the ones that wrestool can't process). However,
         # bitmaps and icons and such don't have the proper icons written, so we need another pass.
-        subprocess.run(['wrestool', '--extract', '--raw', '--output', output_dir, filepath],
+        subprocess.run(['wrestool', '--extract', '--raw', '--output', hash_output_dir, filepath],
                      check=True)
 
         # This now gets the resources wrestool CAN process - we will overwrite the old raw
         # files for the images that wrestool can process.
-        subprocess.run(['wrestool', '--extract', '--output', output_dir, filepath],
+        subprocess.run(['wrestool', '--extract', '--output', hash_output_dir, filepath],
                      check=True)
+
+        # Check if the directory is empty and remove it if it is
+        if not os.listdir(hash_output_dir):
+            shutil.rmtree(hash_output_dir)
+
     except subprocess.CalledProcessError as e:
         print(f"Error running wrestool: {e}", file=sys.stderr)
         sys.exit(1)
@@ -39,6 +72,9 @@ def extract_ne_resources(filepath, output_dir):
 
 def process_file(filepath, output_dir):
     """Process a single file and extract resources if it's a valid PE or NE file."""
+    extract_pe_resources(filepath, output_dir)
+    return
+
     # DETECT THE FILE TYPE.
     # We will first assume this is a PE file, and if loading as a PE fails we will try reading as an NE file.
     try:
