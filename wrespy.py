@@ -73,8 +73,16 @@ def extract_with_wrestool(filepath, output_dir):
             'wrestool', '--extract', *exclude_args, '--output', hash_output_dir, filepath],
             check=True)
 
-        # SEE IF ANY RESOURCES WERE WRITTEN.
-        # Check if the directory is empty and remove it if it is
+        # FIX AVI FILE NAMES.
+        # Wrestool doesn't add these extensions appropriately, so we will add them after the fact.
+        for root, dirs, files in os.walk(hash_output_dir):
+            for file in files:
+                if '_AVI_' in file and not file.lower().endswith('.avi'):
+                    old_path = os.path.join(root, file)
+                    new_path = f"{old_path}.avi"
+                    os.rename(old_path, new_path)
+
+        # REMOVE THE DIRECTORY IF IT IS EMPTY.
         if not os.listdir(hash_output_dir):
             shutil.rmtree(hash_output_dir)
 
