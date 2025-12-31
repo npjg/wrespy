@@ -13,6 +13,7 @@ import pefile
 import nefile
 import hashlib
 import shutil
+import tempfile
 
 # Function to calculate the hash of the first 4096 bytes of a file.
 # This should be sufficient to uniquely distinguish most things where the names are the same.
@@ -25,7 +26,7 @@ def calculate_file_hash(filepath):
     return sha256.hexdigest()
 
 # Updated extract_pe_resources function to handle hash collisions by appending a number to the directory name
-def extract_pe_resources(filepath, output_dir):
+def extract_with_wrestool(filepath, output_dir):
     """Extract resources from a PE file using wrestool."""
     try:
         # Calculate the hash of the start of the file
@@ -70,11 +71,40 @@ def extract_ne_resources(filepath, output_dir):
     print(f"NE: {filepath}")
     executable.export_resources(output_dir)
 
+# Updated process_file function to handle CAB files
 def process_file(filepath, output_dir):
-    """Process a single file and extract resources if it's a valid PE or NE file."""
-    extract_pe_resources(filepath, output_dir)
-    return
+    """Process a single file and extract resources if it's a valid PE, NE, or CAB file."""
+    # Check if the file is a CAB file
+    # TODO: Handle other common installation archive types.
+    if filepath.lower().endswith('.cab'):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            try:
+                # Extract the CAB file into a temporary directory
+                subprocess.run(['cabextract', '-d', temp_dir, filepath], check=True)
 
+                # Process each file inside the extracted CAB directory
+                for root, dirs, files in os.walk(temp_dir):
+                    for filename in files:
+                        extracted_file_path = os.path.join(root, filename)
+                        process_file(extracted_file_path, output_dir)
+            except subprocess.CalledProcessError as e:
+                print(f"Error extracting CAB file: {e}", file=sys.stderr)
+                sys.exit(1)
+            except FileNotFoundError:
+                print("Error: cabextract not found. Please install it.", file=sys.stderr)
+                sys.exit(1)
+        return
+
+    # Otherwise, attempt to extract any resources that might be in here.
+    extract_resources(filepath, output_dir)
+
+# Currently we are trying to extract just with wrestool and not using nefile for now.
+# That might actually be sufficient for our needs.
+def extract_resources(filepath, output_dir):
+    extract_with_wrestool(filepath, output_dir)
+
+# This is currently not used, as the issues with wrestool maybe were resolved? Not sure yet.
+def extract_resources_with_wrestool_or_nefile(filepath, output_dir):
     # DETECT THE FILE TYPE.
     # We will first assume this is a PE file, and if loading as a PE fails we will try reading as an NE file.
     try:
@@ -83,7 +113,7 @@ def process_file(filepath, output_dir):
         # because of the well-known issues with it.
         executable = pefile.PE(filepath)
         print(f"PE: {filepath}")
-        extract_pe_resources(filepath, output_dir)
+        extract_with_wrestool(filepath, output_dir)
 
     except pefile.PEFormatError:
         # Not a PE file, try NE.
