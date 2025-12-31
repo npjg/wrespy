@@ -8,9 +8,6 @@ import os
 import subprocess
 import sys
 import pefile
-# For development purposes, we can install a local version of the library with this:
-#  pipenv install -e ../nefile
-import nefile
 import hashlib
 import shutil
 import tempfile
@@ -133,6 +130,10 @@ def extract_resources(filepath, output_dir):
 
 # This is currently not used, as the issues with wrestool maybe were resolved? Not sure yet.
 def extract_resources_with_wrestool_or_nefile(filepath, output_dir):
+    # For development purposes, we can install a local version of the library with this:
+    #  pipenv install -e ../nefile
+    import nefile
+
     # DETECT THE FILE TYPE.
     # We will first assume this is a PE file, and if loading as a PE fails we will try reading as an NE file.
     try:
