@@ -7,38 +7,16 @@ import argparse
 import os
 import subprocess
 import sys
-import pefile
-import hashlib
 import shutil
 import tempfile
+import textwrap
 
-# Function to calculate the hash of the first 4096 bytes of a file.
-# This should be sufficient to uniquely distinguish most things where the names are the same.
-def calculate_file_hash(filepath):
-    """Calculate the SHA256 hash of the first 4096 bytes of a file."""
-    sha256 = hashlib.sha256()
-    with open(filepath, 'rb') as f:
-        chunk = f.read(4096)
-        sha256.update(chunk)
-    return sha256.hexdigest()
-
-# Updated extract_pe_resources function to handle hash collisions by appending a number to the directory name
 def extract_with_wrestool(filepath, output_dir):
     """Extract resources from a PE file using wrestool."""
     try:
-        # CREATE THE UNIQUE DIRECTORY PATH FOR RESOURCES FROM THIS FILE.
-        # Calculate the hash of the start of the file.
-        file_hash = calculate_file_hash(filepath)
-        filename = os.path.basename(filepath)
-        base_output_dir = os.path.join(output_dir, f"{filename} - {file_hash}")
-        hash_output_dir = base_output_dir
-        # Ensure the directory name is unique by appending a number if necessary.
-        counter = 1
-        while os.path.exists(hash_output_dir):
-            hash_output_dir = f"{base_output_dir}-{counter}"
-            counter += 1
-        # Now, we can actually create the directory.
-        os.makedirs(hash_output_dir, exist_ok=True)
+        # Use the output directory directly (no extra subdirectory needed)
+        os.makedirs(output_dir, exist_ok=True)
+        file_output_dir = output_dir
 
         # DEFINE TYPES THAT WE WANT TO REMOVE.
         # These are not graphical types, and so I am not interested in them.
@@ -62,17 +40,17 @@ def extract_with_wrestool(filepath, output_dir):
         # This gets all resources (including the ones that wrestool can't process). However,
         # bitmaps and icons and such don't have the proper icons written, so we need another pass.
         subprocess.run([
-            'wrestool', '--extract', '--raw', *exclude_args, '--output', hash_output_dir, filepath],
+            'wrestool', '--extract', '--raw', *exclude_args, '--output', file_output_dir, filepath],
             check=True)
         # This now gets the resources wrestool CAN process - we will overwrite the old raw
         # files for the images that wrestool can process.
         subprocess.run([
-            'wrestool', '--extract', *exclude_args, '--output', hash_output_dir, filepath],
+            'wrestool', '--extract', *exclude_args, '--output', file_output_dir, filepath],
             check=True)
 
         # FIX AVI FILE NAMES.
         # Wrestool doesn't add these extensions appropriately, so we will add them after the fact.
-        for root, dirs, files in os.walk(hash_output_dir):
+        for root, dirs, files in os.walk(file_output_dir):
             for file in files:
                 if '_AVI_' in file and not file.lower().endswith('.avi'):
                     old_path = os.path.join(root, file)
@@ -80,8 +58,8 @@ def extract_with_wrestool(filepath, output_dir):
                     os.rename(old_path, new_path)
 
         # REMOVE THE DIRECTORY IF IT IS EMPTY.
-        if not os.listdir(hash_output_dir):
-            shutil.rmtree(hash_output_dir)
+        if not os.listdir(file_output_dir):
+            shutil.rmtree(file_output_dir)
 
     except subprocess.CalledProcessError as e:
         print(f"Error running wrestool: {e}", file=sys.stderr)
@@ -153,26 +131,50 @@ def extract_resources_with_wrestool_or_nefile(filepath, output_dir):
             # Not a valid PE or NE file, so just skip it.
             print(f"Skipped: {filepath}")
 
-def process_path(input_path, output_dir):
+def process_path(input_path, output_dir=None):
     """Process a file or directory recursively."""
     if os.path.isfile(input_path):
+        # If output_dir is not provided for a file, create a default output directory based on input_path.
+        if output_dir is None:
+            output_dir = f"{input_path}.out"
+            os.makedirs(output_dir, exist_ok=True)
         process_file(input_path, output_dir)
 
     elif os.path.isdir(input_path):
+        # When processing a directory without an explicit output path,
+        # create a .out folder for each file in its own location.
         for root, dirs, files in os.walk(input_path):
             for filename in files:
                 filepath = os.path.join(root, filename)
-                process_file(filepath, output_dir)
+                if output_dir is None:
+                    # Create a .out folder next to each file
+                    file_output_dir = f"{filepath}.out"
+                else:
+                    # If output_dir is provided, maintain parallel directory structure
+                    relative_root = os.path.relpath(root, input_path)
+                    parallel_output_dir = os.path.join(output_dir, relative_root)
+                    os.makedirs(parallel_output_dir, exist_ok=True)
+                    file_output_dir = parallel_output_dir
+                process_file(filepath, file_output_dir)
     else:
         print(f"Error: {input_path} is not a valid file or directory", file=sys.stderr)
         sys.exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(description='Extract resources from Windows executables (PE or NE)')
-    parser.add_argument('input_filepath', help='Path to a Windows executable or directory containing such executables. Files that are not PE or NE files will be ignored.')
-    # TODO: Maybe the path should be the name of the file and the hash of the file? So we can put everything into
-    # one directory to make things easier to find.
-    parser.add_argument('output_directory_path', help='Path to directory where resources should be extracted.')
+    parser = argparse.ArgumentParser(
+        description=textwrap.dedent('''
+            Extract resources from Windows executables (PE or NE).
+
+            If input_filepath is a directory, wrespy decodes all resources in all
+            files and subdirectories within that directory, producing a parallel directory
+            structure in the output directory.
+
+            If output_directory_path is not given, the directory <input_filepath>.out is created
+            and the output is written there.
+        ''')
+    )
+    parser.add_argument('input_filepath', help='Path to a Windows executable or a directory containing such executables. Files that are not PE or NE files will be ignored.')
+    parser.add_argument('--output_directory_path', help='Path to directory where resources should be extracted. If not provided, <input_filepath>.out will be used.')
     args = parser.parse_args()
 
     input_filepath = args.input_filepath
